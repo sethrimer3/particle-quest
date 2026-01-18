@@ -240,10 +240,13 @@ export function updateBatAI(bat: Bat, player: Player, grid: ParticleGrid) {
     bat.vy = distToPlayerY > 0 ? 3 : -3
     
     // Stop diving if close to ground
-    const below = grid.get(Math.floor(bat.x), Math.floor(bat.y + bat.height + 1))
-    if (below && below.type !== ParticleType.AIR) {
-      bat.isDiving = false
-      bat.vy = -4 // Fly back up
+    const checkY = Math.floor(bat.y + bat.height + 1)
+    if (checkY < grid.height) {
+      const below = grid.get(Math.floor(bat.x), checkY)
+      if (below && below.type !== ParticleType.AIR) {
+        bat.isDiving = false
+        bat.vy = -4 // Fly back up
+      }
     }
   } else {
     // Hover and follow player horizontally

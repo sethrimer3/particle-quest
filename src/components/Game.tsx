@@ -24,6 +24,18 @@ import { useKV } from '@github/spark/hooks'
 const GRID_WIDTH = 120
 const GRID_HEIGHT = 80
 
+// Game balance constants
+const MAX_PLAYER_HEALTH = 100
+const HEALTH_PICKUP_CHANCE = 0.3
+const HEALTH_PICKUP_HEAL_AMOUNT = 25
+const COMBO_DURATION = 3
+const MAX_COMBO_MULTIPLIER = 5
+const INITIAL_SPAWN_INTERVAL = 20
+const MIN_SPAWN_INTERVAL = 10
+const DIFFICULTY_TIME_DIVISOR = 30
+const MAX_SLIMES = 6
+const MAX_BATS = 4
+
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [keys, setKeys] = useState<Set<string>>(new Set())
@@ -31,7 +43,7 @@ export default function Game() {
   const [highScore, setHighScore] = useKV<number>('rpg-high-score', 0)
   const [gameOver, setGameOver] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
-  const [playerHealth, setPlayerHealth] = useState(100)
+  const [playerHealth, setPlayerHealth] = useState(MAX_PLAYER_HEALTH)
   const [screenShake, setScreenShake] = useState({ x: 0, y: 0 })
   const [combo, setCombo] = useState(0)
   const [comboTimer, setComboTimer] = useState(0)
@@ -54,7 +66,7 @@ export default function Game() {
     const playerSpawn = findSpawnPosition(grid, 3)
     if (playerSpawn) {
       playerRef.current = createPlayer(playerSpawn.x, playerSpawn.y)
-      setPlayerHealth(100)
+      setPlayerHealth(MAX_PLAYER_HEALTH)
     }
 
     for (let i = 0; i < 3; i++) {
@@ -245,9 +257,9 @@ export default function Game() {
             
             // Update combo
             setCombo(prev => prev + 1)
-            setComboTimer(3) // 3 seconds to keep combo
+            setComboTimer(COMBO_DURATION)
             
-            const comboMultiplier = Math.min(combo + 1, 5)
+            const comboMultiplier = Math.min(combo + 1, MAX_COMBO_MULTIPLIER)
             const points = 10 * comboMultiplier
             setScore((current) => (current ?? 0) + points)
 
@@ -314,14 +326,14 @@ export default function Game() {
             
             // Update combo
             setCombo(prev => prev + 1)
-            setComboTimer(3) // 3 seconds to keep combo
+            setComboTimer(COMBO_DURATION)
             
-            const comboMultiplier = Math.min(combo + 1, 5)
+            const comboMultiplier = Math.min(combo + 1, MAX_COMBO_MULTIPLIER)
             const points = 15 * comboMultiplier
             setScore((current) => (current ?? 0) + points)
 
-            // 30% chance to spawn health pickup at bat location
-            if (Math.random() < 0.3 && player.health < 100) {
+            // Chance to spawn health pickup at bat location
+            if (Math.random() < HEALTH_PICKUP_CHANCE && player.health < MAX_PLAYER_HEALTH) {
               const spawnPos = findSpawnPosition(grid, 2)
               if (spawnPos) {
                 healthPickupsRef.current.push({
@@ -351,7 +363,7 @@ export default function Game() {
       
       if (distX < player.width && distY < player.height) {
         // Collect health
-        player.health = Math.min(100, player.health + 25)
+        player.health = Math.min(MAX_PLAYER_HEALTH, player.health + HEALTH_PICKUP_HEAL_AMOUNT)
         setPlayerHealth(player.health)
         
         // Healing particle effects
@@ -374,7 +386,7 @@ export default function Game() {
 
     // Difficulty progression - spawn more enemies over time
     const currentTime = gameTimeRef.current
-    const spawnInterval = Math.max(10, 20 - Math.floor(currentTime / 30)) // Spawn faster over time
+    const spawnInterval = Math.max(MIN_SPAWN_INTERVAL, INITIAL_SPAWN_INTERVAL - Math.floor(currentTime / DIFFICULTY_TIME_DIVISOR))
     
     if (currentTime - lastSpawnTimeRef.current > spawnInterval) {
       lastSpawnTimeRef.current = currentTime
@@ -383,14 +395,14 @@ export default function Game() {
       if (Math.random() < 0.5) {
         // Spawn slime
         const spawnPos = findSpawnPosition(grid, 2)
-        if (spawnPos && slimesRef.current.length < 6) {
+        if (spawnPos && slimesRef.current.length < MAX_SLIMES) {
           slimesRef.current.push(createSlime(spawnPos.x, spawnPos.y))
         }
       } else {
         // Spawn bat
         const batX = Math.random() * (grid.width - 2)
         const batY = 10 + Math.random() * 15
-        if (batsRef.current.length < 4) {
+        if (batsRef.current.length < MAX_BATS) {
           batsRef.current.push(createBat(batX, batY))
         }
       }
@@ -566,7 +578,7 @@ export default function Game() {
     }
     setScore(0)
     setGameOver(false)
-    setPlayerHealth(100)
+    setPlayerHealth(MAX_PLAYER_HEALTH)
     setScreenShake({ x: 0, y: 0 })
     setCombo(0)
     setComboTimer(0)
@@ -621,7 +633,7 @@ export default function Game() {
             HP: {playerHealth}
           </span>
         </div>
-        <Progress value={(playerHealth / 100) * 100} className="h-2" />
+        <Progress value={(playerHealth / MAX_PLAYER_HEALTH) * 100} className="h-2" />
       </div>
 
       <div className="absolute top-4 right-4 bg-card/90 border-2 border-border p-3 text-card-foreground">
