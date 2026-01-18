@@ -33,6 +33,8 @@ export default function Game() {
   const [isPaused, setIsPaused] = useState(false)
   const [playerHealth, setPlayerHealth] = useState(100)
   const [screenShake, setScreenShake] = useState({ x: 0, y: 0 })
+  const [combo, setCombo] = useState(0)
+  const [comboTimer, setComboTimer] = useState(0)
 
   const gridRef = useRef<ParticleGrid | null>(null)
   const playerRef = useRef<Player | null>(null)
@@ -42,6 +44,8 @@ export default function Game() {
   const animationRef = useRef<number | null>(null)
   const particleEffectsRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; life: number; color: string }>>([])
   const lastDamageTimeRef = useRef(0)
+  const gameTimeRef = useRef(0)
+  const lastSpawnTimeRef = useRef(0)
 
   useEffect(() => {
     const grid = new ParticleGrid(GRID_WIDTH, GRID_HEIGHT)
@@ -137,6 +141,17 @@ export default function Game() {
     const grid = gridRef.current
     const player = playerRef.current
 
+    // Update game time for difficulty scaling
+    gameTimeRef.current += dt
+
+    // Combo timer countdown
+    if (comboTimer > 0) {
+      setComboTimer(comboTimer - dt)
+      if (comboTimer <= 0) {
+        setCombo(0)
+      }
+    }
+
     const sprint = keys.has('shift')
     const moveSpeed = sprint ? 4 : 2
 
@@ -227,7 +242,14 @@ export default function Game() {
             }
             
             slimesRef.current.splice(index, 1)
-            setScore((current) => (current ?? 0) + 10)
+            
+            // Update combo
+            setCombo(prev => prev + 1)
+            setComboTimer(3) // 3 seconds to keep combo
+            
+            const comboMultiplier = Math.min(combo + 1, 5)
+            const points = 10 * comboMultiplier
+            setScore((current) => (current ?? 0) + points)
 
             const spawnPos = findSpawnPosition(grid, 2)
             if (spawnPos) {
@@ -289,7 +311,14 @@ export default function Game() {
             }
             
             batsRef.current.splice(index, 1)
-            setScore((current) => (current ?? 0) + 15)
+            
+            // Update combo
+            setCombo(prev => prev + 1)
+            setComboTimer(3) // 3 seconds to keep combo
+            
+            const comboMultiplier = Math.min(combo + 1, 5)
+            const points = 15 * comboMultiplier
+            setScore((current) => (current ?? 0) + points)
 
             // 30% chance to spawn health pickup at bat location
             if (Math.random() < 0.3 && player.health < 100) {
@@ -342,6 +371,30 @@ export default function Game() {
       
       return true // Keep pickup
     })
+
+    // Difficulty progression - spawn more enemies over time
+    const currentTime = gameTimeRef.current
+    const spawnInterval = Math.max(10, 20 - Math.floor(currentTime / 30)) // Spawn faster over time
+    
+    if (currentTime - lastSpawnTimeRef.current > spawnInterval) {
+      lastSpawnTimeRef.current = currentTime
+      
+      // Spawn additional enemy
+      if (Math.random() < 0.5) {
+        // Spawn slime
+        const spawnPos = findSpawnPosition(grid, 2)
+        if (spawnPos && slimesRef.current.length < 6) {
+          slimesRef.current.push(createSlime(spawnPos.x, spawnPos.y))
+        }
+      } else {
+        // Spawn bat
+        const batX = Math.random() * (grid.width - 2)
+        const batY = 10 + Math.random() * 15
+        if (batsRef.current.length < 4) {
+          batsRef.current.push(createBat(batX, batY))
+        }
+      }
+    }
   }
 
   const render = (ctx: CanvasRenderingContext2D) => {
@@ -515,8 +568,12 @@ export default function Game() {
     setGameOver(false)
     setPlayerHealth(100)
     setScreenShake({ x: 0, y: 0 })
+    setCombo(0)
+    setComboTimer(0)
     particleEffectsRef.current = []
     lastDamageTimeRef.current = 0
+    gameTimeRef.current = 0
+    lastSpawnTimeRef.current = 0
 
     const grid = new ParticleGrid(GRID_WIDTH, GRID_HEIGHT)
     generateLevel(grid)
@@ -572,7 +629,12 @@ export default function Game() {
           <Sword size={16} weight="fill" />
           <span className="text-xs">Score: {score ?? 0}</span>
         </div>
-        <div className="text-xs text-muted-foreground">High: {highScore ?? 0}</div>
+        <div className="text-xs text-muted-foreground mb-1">High: {highScore ?? 0}</div>
+        {combo > 1 && comboTimer > 0 && (
+          <div className="text-xs font-bold text-yellow-400 animate-pulse">
+            x{combo} COMBO!
+          </div>
+        )}
       </div>
 
       <div className="absolute bottom-4 left-4 bg-card/90 border-2 border-border p-2 text-card-foreground text-[8px] leading-tight">
