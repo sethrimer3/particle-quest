@@ -30,6 +30,7 @@ export default function Game() {
   const [score, setScore] = useKV<number>('rpg-score', 0)
   const [highScore, setHighScore] = useKV<number>('rpg-high-score', 0)
   const [gameOver, setGameOver] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
   const [playerHealth, setPlayerHealth] = useState(100)
   const [screenShake, setScreenShake] = useState({ x: 0, y: 0 })
 
@@ -37,6 +38,7 @@ export default function Game() {
   const playerRef = useRef<Player | null>(null)
   const slimesRef = useRef<Slime[]>([])
   const batsRef = useRef<Bat[]>([])
+  const healthPickupsRef = useRef<Array<{ x: number; y: number; pulse: number }>>([])
   const animationRef = useRef<number | null>(null)
   const particleEffectsRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; life: number; color: string }>>([])
   const lastDamageTimeRef = useRef(0)
@@ -70,7 +72,11 @@ export default function Game() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      setKeys((prev) => new Set(prev).add(e.key.toLowerCase()))
+      if (e.key.toLowerCase() === 'escape' || e.key.toLowerCase() === 'p') {
+        setIsPaused(prev => !prev)
+      } else {
+        setKeys((prev) => new Set(prev).add(e.key.toLowerCase()))
+      }
     }
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -122,10 +128,10 @@ export default function Game() {
         cancelAnimationFrame(animationRef.current)
       }
     }
-  }, [keys, gameOver])
+  }, [keys, gameOver, isPaused])
 
   const update = (dt: number) => {
-    if (gameOver) return
+    if (gameOver || isPaused) return
     if (!gridRef.current || !playerRef.current) return
 
     const grid = gridRef.current
@@ -285,6 +291,18 @@ export default function Game() {
             batsRef.current.splice(index, 1)
             setScore((current) => (current ?? 0) + 15)
 
+            // 30% chance to spawn health pickup at bat location
+            if (Math.random() < 0.3 && player.health < 100) {
+              const spawnPos = findSpawnPosition(grid, 2)
+              if (spawnPos) {
+                healthPickupsRef.current.push({
+                  x: spawnPos.x,
+                  y: spawnPos.y,
+                  pulse: 0
+                })
+              }
+            }
+
             // Spawn new bat in the air
             const batX = Math.random() * (grid.width - 2)
             const batY = 10 + Math.random() * 15
@@ -292,6 +310,37 @@ export default function Game() {
           }
         }
       }
+    })
+
+    // Update and check health pickups
+    healthPickupsRef.current = healthPickupsRef.current.filter(pickup => {
+      pickup.pulse += 0.1
+      
+      // Check if player collects it
+      const distX = Math.abs(player.x - pickup.x)
+      const distY = Math.abs(player.y - pickup.y)
+      
+      if (distX < player.width && distY < player.height) {
+        // Collect health
+        player.health = Math.min(100, player.health + 25)
+        setPlayerHealth(player.health)
+        
+        // Healing particle effects
+        for (let i = 0; i < 10; i++) {
+          particleEffectsRef.current.push({
+            x: (pickup.x + 1) * PARTICLE_SIZE,
+            y: (pickup.y + 1) * PARTICLE_SIZE,
+            vx: (Math.random() - 0.5) * 3,
+            vy: (Math.random() - 0.5) * 3 - 2,
+            life: 30,
+            color: PARTICLE_COLORS[ParticleType.HEALTH_PICKUP]
+          })
+        }
+        
+        return false // Remove pickup
+      }
+      
+      return true // Keep pickup
     })
   }
 
@@ -368,6 +417,37 @@ export default function Game() {
         PARTICLE_SIZE / 2,
         PARTICLE_SIZE / 2 + wingFlap
       )
+    })
+
+    // Draw health pickups with pulse animation
+    healthPickupsRef.current.forEach(pickup => {
+      const pulseScale = 1 + Math.sin(pickup.pulse) * 0.2
+      const size = 2 * PARTICLE_SIZE * pulseScale
+      
+      ctx.fillStyle = PARTICLE_COLORS[ParticleType.HEALTH_PICKUP]
+      ctx.globalAlpha = 0.8 + Math.sin(pickup.pulse) * 0.2
+      
+      // Draw cross shape for health
+      const centerX = (pickup.x + 1) * PARTICLE_SIZE
+      const centerY = (pickup.y + 1) * PARTICLE_SIZE
+      
+      // Horizontal bar
+      ctx.fillRect(
+        centerX - size / 2,
+        centerY - size / 6,
+        size,
+        size / 3
+      )
+      
+      // Vertical bar
+      ctx.fillRect(
+        centerX - size / 6,
+        centerY - size / 2,
+        size / 3,
+        size
+      )
+      
+      ctx.globalAlpha = 1
     })
 
     if (player.attackFrame > 0) {
@@ -461,6 +541,9 @@ export default function Game() {
       batsRef.current.push(createBat(batX, batY))
     }
 
+    healthPickupsRef.current = []
+    setIsPaused(false)
+
     gridRef.current = grid
   }
 
@@ -497,7 +580,31 @@ export default function Game() {
         <div>Shift: Sprint</div>
         <div>W: Jump</div>
         <div>Space: Attack</div>
+        <div className="mt-1 pt-1 border-t border-border">ESC/P: Pause</div>
       </div>
+
+      {isPaused && !gameOver && (
+        <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+          <div className="bg-card border-4 border-border p-8 text-center">
+            <h2 className="text-3xl text-card-foreground mb-6">⏸ Paused</h2>
+            <p className="text-muted-foreground mb-4">Press ESC or P to resume</p>
+            <div className="flex gap-4 justify-center">
+              <button
+                onClick={() => setIsPaused(false)}
+                className="bg-primary hover:bg-primary/80 text-primary-foreground px-6 py-3 text-xs border-2 border-border active:translate-y-[2px]"
+              >
+                Resume
+              </button>
+              <button
+                onClick={resetGame}
+                className="bg-secondary hover:bg-secondary/80 text-secondary-foreground px-6 py-3 text-xs border-2 border-border active:translate-y-[2px]"
+              >
+                Restart
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {gameOver && (
         <div className="absolute inset-0 bg-black/80 flex items-center justify-center">
