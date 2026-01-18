@@ -4,20 +4,25 @@ import {
   Player,
   Slime,
   Bat,
+  Spider,
   createPlayer,
   createSlime,
   createBat,
+  createSpider,
   updatePlayerPhysics,
   updateSlimeAI,
   updateBatAI,
+  updateSpiderAI,
   checkPlayerSlimeCollision,
   checkPlayerBatCollision,
+  checkPlayerSpiderCollision,
   getSwordHitbox,
   checkSwordSlimeCollision,
   checkSwordBatCollision,
+  checkSwordSpiderCollision,
 } from '@/lib/entities'
 import { generateLevel, findSpawnPosition } from '@/lib/level'
-import { Heart, Sword } from '@phosphor-icons/react'
+import { Heart, Sword, Lightning, ShieldCheck } from '@phosphor-icons/react'
 import { Progress } from '@/components/ui/progress'
 import { useKV } from '@github/spark/hooks'
 
@@ -35,6 +40,19 @@ const MIN_SPAWN_INTERVAL = 10
 const DIFFICULTY_TIME_DIVISOR = 30
 const MAX_SLIMES = 6
 const MAX_BATS = 4
+const MAX_SPIDERS = 3
+const POWER_UP_DURATION = 8
+const POWER_UP_SPAWN_CHANCE = 0.15
+
+// Enemy spawn probabilities
+const SLIME_SPAWN_THRESHOLD = 0.4
+const BAT_SPAWN_THRESHOLD = 0.7
+
+export enum PowerUpType {
+  SPEED = 'speed',
+  SHIELD = 'shield',
+  DAMAGE = 'damage',
+}
 
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -47,14 +65,20 @@ export default function Game() {
   const [screenShake, setScreenShake] = useState({ x: 0, y: 0 })
   const [combo, setCombo] = useState(0)
   const [comboTimer, setComboTimer] = useState(0)
+  const [activePowerUp, setActivePowerUp] = useState<PowerUpType | null>(null)
+  const [powerUpTimer, setPowerUpTimer] = useState(0)
+  const [enemiesKilled, setEnemiesKilled] = useState(0)
 
   const gridRef = useRef<ParticleGrid | null>(null)
   const playerRef = useRef<Player | null>(null)
   const slimesRef = useRef<Slime[]>([])
   const batsRef = useRef<Bat[]>([])
+  const spidersRef = useRef<Spider[]>([])
   const healthPickupsRef = useRef<Array<{ x: number; y: number; pulse: number }>>([])
+  const powerUpsRef = useRef<Array<{ x: number; y: number; pulse: number; type: PowerUpType }>>([])
   const animationRef = useRef<number | null>(null)
   const particleEffectsRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; life: number; color: string }>>([])
+  const floatingTextRef = useRef<Array<{ x: number; y: number; text: string; life: number; color: string }>>([])
   const lastDamageTimeRef = useRef(0)
   const gameTimeRef = useRef(0)
   const lastSpawnTimeRef = useRef(0)
@@ -81,6 +105,12 @@ export default function Game() {
       const batX = Math.random() * (grid.width - 2)
       const batY = 15 + Math.random() * 10
       batsRef.current.push(createBat(batX, batY))
+    }
+
+    // Add 1 spider
+    const spiderSpawn = findSpawnPosition(grid, 2)
+    if (spiderSpawn) {
+      spidersRef.current.push(createSpider(spiderSpawn.x, spiderSpawn.y))
     }
 
     gridRef.current = grid
@@ -164,8 +194,17 @@ export default function Game() {
       }
     }
 
+    // Power-up timer countdown
+    if (powerUpTimer > 0) {
+      setPowerUpTimer(powerUpTimer - dt)
+      if (powerUpTimer <= 0) {
+        setActivePowerUp(null)
+      }
+    }
+
     const sprint = keys.has('shift')
-    const moveSpeed = sprint ? 4 : 2
+    const speedMultiplier = activePowerUp === PowerUpType.SPEED ? 1.5 : 1
+    const moveSpeed = (sprint ? 4 : 2) * speedMultiplier
 
     if (keys.has('a')) {
       player.vx = -moveSpeed
@@ -196,6 +235,13 @@ export default function Game() {
       return p.life > 0
     })
 
+    // Update floating text
+    floatingTextRef.current = floatingTextRef.current.filter(t => {
+      t.y -= 0.5
+      t.life--
+      return t.life > 0
+    })
+
     // Update screen shake
     if (screenShake.x !== 0 || screenShake.y !== 0) {
       setScreenShake({ x: screenShake.x * 0.7, y: screenShake.y * 0.7 })
@@ -209,29 +255,41 @@ export default function Game() {
 
       const currentTime = performance.now()
       if (checkPlayerSlimeCollision(player, slime) && currentTime - lastDamageTimeRef.current > 500) {
-        player.health -= 5
-        setPlayerHealth(player.health)
-        lastDamageTimeRef.current = currentTime
-        
-        // Screen shake on damage
-        setScreenShake({ x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8 })
-        
-        // Damage particle effects
-        for (let i = 0; i < 8; i++) {
-          particleEffectsRef.current.push({
+        // Shield power-up blocks damage
+        if (activePowerUp !== PowerUpType.SHIELD) {
+          player.health -= 5
+          setPlayerHealth(player.health)
+          lastDamageTimeRef.current = currentTime
+          
+          // Screen shake on damage
+          setScreenShake({ x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8 })
+          
+          // Damage particle effects
+          for (let i = 0; i < 8; i++) {
+            particleEffectsRef.current.push({
+              x: (player.x + player.width / 2) * PARTICLE_SIZE,
+              y: (player.y + player.height / 2) * PARTICLE_SIZE,
+              vx: (Math.random() - 0.5) * 4,
+              vy: (Math.random() - 0.5) * 4 - 2,
+              life: 30,
+              color: '#FF0000'
+            })
+          }
+          
+          // Floating damage text
+          floatingTextRef.current.push({
             x: (player.x + player.width / 2) * PARTICLE_SIZE,
-            y: (player.y + player.height / 2) * PARTICLE_SIZE,
-            vx: (Math.random() - 0.5) * 4,
-            vy: (Math.random() - 0.5) * 4 - 2,
-            life: 30,
+            y: player.y * PARTICLE_SIZE,
+            text: '-5',
+            life: 60,
             color: '#FF0000'
           })
-        }
-        
-        if (player.health <= 0) {
-          setGameOver(true)
-          if ((score ?? 0) > (highScore ?? 0)) {
-            setHighScore((score ?? 0))
+          
+          if (player.health <= 0) {
+            setGameOver(true)
+            if ((score ?? 0) > (highScore ?? 0)) {
+              setHighScore((score ?? 0))
+            }
           }
         }
       }
@@ -239,7 +297,18 @@ export default function Game() {
       if (player.attackFrame > 0) {
         const swordHitbox = getSwordHitbox(player, player.attackFrame)
         if (checkSwordSlimeCollision(swordHitbox, slime)) {
-          slime.health -= 2
+          const damage = activePowerUp === PowerUpType.DAMAGE ? 4 : 2
+          slime.health -= damage
+          
+          // Floating damage text
+          floatingTextRef.current.push({
+            x: (slime.x + slime.width / 2) * PARTICLE_SIZE,
+            y: slime.y * PARTICLE_SIZE,
+            text: `-${damage}`,
+            life: 60,
+            color: activePowerUp === PowerUpType.DAMAGE ? '#FFD700' : '#FFFFFF'
+          })
+          
           if (slime.health <= 0) {
             // Death particle effects
             for (let i = 0; i < 15; i++) {
@@ -255,6 +324,9 @@ export default function Game() {
             
             slimesRef.current.splice(index, 1)
             
+            // Update kill counter
+            setEnemiesKilled(prev => prev + 1)
+            
             // Update combo
             setCombo(prev => prev + 1)
             setComboTimer(COMBO_DURATION)
@@ -262,6 +334,15 @@ export default function Game() {
             const comboMultiplier = Math.min(combo + 1, MAX_COMBO_MULTIPLIER)
             const points = 10 * comboMultiplier
             setScore((current) => (current ?? 0) + points)
+
+            // Floating score text
+            floatingTextRef.current.push({
+              x: (slime.x + slime.width / 2) * PARTICLE_SIZE,
+              y: (slime.y - 2) * PARTICLE_SIZE,
+              text: `+${points}`,
+              life: 60,
+              color: '#00FF00'
+            })
 
             const spawnPos = findSpawnPosition(grid, 2)
             if (spawnPos) {
@@ -278,29 +359,40 @@ export default function Game() {
 
       const currentTime = performance.now()
       if (checkPlayerBatCollision(player, bat) && currentTime - lastDamageTimeRef.current > 500) {
-        player.health -= 3
-        setPlayerHealth(player.health)
-        lastDamageTimeRef.current = currentTime
-        
-        // Screen shake on damage
-        setScreenShake({ x: (Math.random() - 0.5) * 6, y: (Math.random() - 0.5) * 6 })
-        
-        // Damage particle effects
-        for (let i = 0; i < 6; i++) {
-          particleEffectsRef.current.push({
+        if (activePowerUp !== PowerUpType.SHIELD) {
+          player.health -= 3
+          setPlayerHealth(player.health)
+          lastDamageTimeRef.current = currentTime
+          
+          // Screen shake on damage
+          setScreenShake({ x: (Math.random() - 0.5) * 6, y: (Math.random() - 0.5) * 6 })
+          
+          // Damage particle effects
+          for (let i = 0; i < 6; i++) {
+            particleEffectsRef.current.push({
+              x: (player.x + player.width / 2) * PARTICLE_SIZE,
+              y: (player.y + player.height / 2) * PARTICLE_SIZE,
+              vx: (Math.random() - 0.5) * 3,
+              vy: (Math.random() - 0.5) * 3 - 1,
+              life: 25,
+              color: '#FF6666'
+            })
+          }
+          
+          // Floating damage text
+          floatingTextRef.current.push({
             x: (player.x + player.width / 2) * PARTICLE_SIZE,
-            y: (player.y + player.height / 2) * PARTICLE_SIZE,
-            vx: (Math.random() - 0.5) * 3,
-            vy: (Math.random() - 0.5) * 3 - 1,
-            life: 25,
+            y: player.y * PARTICLE_SIZE,
+            text: '-3',
+            life: 60,
             color: '#FF6666'
           })
-        }
-        
-        if (player.health <= 0) {
-          setGameOver(true)
-          if ((score ?? 0) > (highScore ?? 0)) {
-            setHighScore((score ?? 0))
+          
+          if (player.health <= 0) {
+            setGameOver(true)
+            if ((score ?? 0) > (highScore ?? 0)) {
+              setHighScore((score ?? 0))
+            }
           }
         }
       }
@@ -308,7 +400,18 @@ export default function Game() {
       if (player.attackFrame > 0) {
         const swordHitbox = getSwordHitbox(player, player.attackFrame)
         if (checkSwordBatCollision(swordHitbox, bat)) {
-          bat.health -= 2
+          const damage = activePowerUp === PowerUpType.DAMAGE ? 4 : 2
+          bat.health -= damage
+          
+          // Floating damage text
+          floatingTextRef.current.push({
+            x: (bat.x + bat.width / 2) * PARTICLE_SIZE,
+            y: bat.y * PARTICLE_SIZE,
+            text: `-${damage}`,
+            life: 60,
+            color: activePowerUp === PowerUpType.DAMAGE ? '#FFD700' : '#FFFFFF'
+          })
+          
           if (bat.health <= 0) {
             // Death particle effects
             for (let i = 0; i < 12; i++) {
@@ -324,6 +427,9 @@ export default function Game() {
             
             batsRef.current.splice(index, 1)
             
+            // Update kill counter
+            setEnemiesKilled(prev => prev + 1)
+            
             // Update combo
             setCombo(prev => prev + 1)
             setComboTimer(COMBO_DURATION)
@@ -332,8 +438,30 @@ export default function Game() {
             const points = 15 * comboMultiplier
             setScore((current) => (current ?? 0) + points)
 
-            // Chance to spawn health pickup at bat location
-            if (Math.random() < HEALTH_PICKUP_CHANCE && player.health < MAX_PLAYER_HEALTH) {
+            // Floating score text
+            floatingTextRef.current.push({
+              x: (bat.x + bat.width / 2) * PARTICLE_SIZE,
+              y: (bat.y - 2) * PARTICLE_SIZE,
+              text: `+${points}`,
+              life: 60,
+              color: '#00FF00'
+            })
+
+            // Chance to spawn health pickup or power-up at bat location
+            const roll = Math.random()
+            if (roll < POWER_UP_SPAWN_CHANCE) {
+              const spawnPos = findSpawnPosition(grid, 2)
+              if (spawnPos) {
+                const powerUpTypes = [PowerUpType.SPEED, PowerUpType.SHIELD, PowerUpType.DAMAGE]
+                const randomType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)]
+                powerUpsRef.current.push({
+                  x: spawnPos.x,
+                  y: spawnPos.y,
+                  pulse: 0,
+                  type: randomType
+                })
+              }
+            } else if (roll < HEALTH_PICKUP_CHANCE && player.health < MAX_PLAYER_HEALTH) {
               const spawnPos = findSpawnPosition(grid, 2)
               if (spawnPos) {
                 healthPickupsRef.current.push({
@@ -351,6 +479,155 @@ export default function Game() {
           }
         }
       }
+    })
+
+    // Update spiders
+    spidersRef.current.forEach((spider, index) => {
+      updateSpiderAI(spider, player, grid)
+
+      const currentTime = performance.now()
+      if (checkPlayerSpiderCollision(player, spider) && currentTime - lastDamageTimeRef.current > 500) {
+        if (activePowerUp !== PowerUpType.SHIELD) {
+          player.health -= 4
+          setPlayerHealth(player.health)
+          lastDamageTimeRef.current = currentTime
+          
+          // Screen shake on damage
+          setScreenShake({ x: (Math.random() - 0.5) * 7, y: (Math.random() - 0.5) * 7 })
+          
+          // Damage particle effects
+          for (let i = 0; i < 7; i++) {
+            particleEffectsRef.current.push({
+              x: (player.x + player.width / 2) * PARTICLE_SIZE,
+              y: (player.y + player.height / 2) * PARTICLE_SIZE,
+              vx: (Math.random() - 0.5) * 3.5,
+              vy: (Math.random() - 0.5) * 3.5 - 1.5,
+              life: 28,
+              color: '#FF4500'
+            })
+          }
+          
+          // Floating damage text
+          floatingTextRef.current.push({
+            x: (player.x + player.width / 2) * PARTICLE_SIZE,
+            y: player.y * PARTICLE_SIZE,
+            text: '-4',
+            life: 60,
+            color: '#FF4500'
+          })
+          
+          if (player.health <= 0) {
+            setGameOver(true)
+            if ((score ?? 0) > (highScore ?? 0)) {
+              setHighScore((score ?? 0))
+            }
+          }
+        }
+      }
+
+      if (player.attackFrame > 0) {
+        const swordHitbox = getSwordHitbox(player, player.attackFrame)
+        if (checkSwordSpiderCollision(swordHitbox, spider)) {
+          const damage = activePowerUp === PowerUpType.DAMAGE ? 4 : 2
+          spider.health -= damage
+          
+          // Floating damage text
+          floatingTextRef.current.push({
+            x: (spider.x + spider.width / 2) * PARTICLE_SIZE,
+            y: spider.y * PARTICLE_SIZE,
+            text: `-${damage}`,
+            life: 60,
+            color: activePowerUp === PowerUpType.DAMAGE ? '#FFD700' : '#FFFFFF'
+          })
+          
+          if (spider.health <= 0) {
+            // Death particle effects
+            for (let i = 0; i < 13; i++) {
+              particleEffectsRef.current.push({
+                x: (spider.x + spider.width / 2) * PARTICLE_SIZE,
+                y: (spider.y + spider.height / 2) * PARTICLE_SIZE,
+                vx: (Math.random() - 0.5) * 5.5,
+                vy: (Math.random() - 0.5) * 5.5 - 2.5,
+                life: 37,
+                color: PARTICLE_COLORS[ParticleType.SPIDER]
+              })
+            }
+            
+            spidersRef.current.splice(index, 1)
+            
+            // Update kill counter
+            setEnemiesKilled(prev => prev + 1)
+            
+            // Update combo
+            setCombo(prev => prev + 1)
+            setComboTimer(COMBO_DURATION)
+            
+            const comboMultiplier = Math.min(combo + 1, MAX_COMBO_MULTIPLIER)
+            const points = 12 * comboMultiplier
+            setScore((current) => (current ?? 0) + points)
+
+            // Floating score text
+            floatingTextRef.current.push({
+              x: (spider.x + spider.width / 2) * PARTICLE_SIZE,
+              y: (spider.y - 2) * PARTICLE_SIZE,
+              text: `+${points}`,
+              life: 60,
+              color: '#00FF00'
+            })
+
+            // Spawn new spider
+            const spawnPos = findSpawnPosition(grid, 2)
+            if (spawnPos) {
+              spidersRef.current.push(createSpider(spawnPos.x, spawnPos.y))
+            }
+          }
+        }
+      }
+    })
+
+    // Update and check power-ups
+    powerUpsRef.current = powerUpsRef.current.filter(powerUp => {
+      powerUp.pulse += 0.1
+      
+      // Check if player collects it
+      const distX = Math.abs(player.x - powerUp.x)
+      const distY = Math.abs(player.y - powerUp.y)
+      
+      if (distX < player.width && distY < player.height) {
+        // Activate power-up
+        setActivePowerUp(powerUp.type)
+        setPowerUpTimer(POWER_UP_DURATION)
+        
+        // Power-up particle effects
+        for (let i = 0; i < 15; i++) {
+          particleEffectsRef.current.push({
+            x: (powerUp.x + 1) * PARTICLE_SIZE,
+            y: (powerUp.y + 1) * PARTICLE_SIZE,
+            vx: (Math.random() - 0.5) * 4,
+            vy: (Math.random() - 0.5) * 4 - 2,
+            life: 35,
+            color: PARTICLE_COLORS[ParticleType.POWER_UP]
+          })
+        }
+        
+        // Floating text for power-up type
+        const powerUpNames = {
+          [PowerUpType.SPEED]: 'SPEED!',
+          [PowerUpType.SHIELD]: 'SHIELD!',
+          [PowerUpType.DAMAGE]: 'POWER!'
+        }
+        floatingTextRef.current.push({
+          x: (powerUp.x + 1) * PARTICLE_SIZE,
+          y: powerUp.y * PARTICLE_SIZE,
+          text: powerUpNames[powerUp.type],
+          life: 90,
+          color: '#FFD700'
+        })
+        
+        return false // Remove power-up
+      }
+      
+      return true // Keep power-up
     })
 
     // Update and check health pickups
@@ -378,6 +655,15 @@ export default function Game() {
           })
         }
         
+        // Floating heal text
+        floatingTextRef.current.push({
+          x: (pickup.x + 1) * PARTICLE_SIZE,
+          y: pickup.y * PARTICLE_SIZE,
+          text: `+${HEALTH_PICKUP_HEAL_AMOUNT} HP`,
+          life: 60,
+          color: '#00FF00'
+        })
+        
         return false // Remove pickup
       }
       
@@ -392,18 +678,25 @@ export default function Game() {
       lastSpawnTimeRef.current = currentTime
       
       // Spawn additional enemy
-      if (Math.random() < 0.5) {
+      const roll = Math.random()
+      if (roll < SLIME_SPAWN_THRESHOLD) {
         // Spawn slime
         const spawnPos = findSpawnPosition(grid, 2)
         if (spawnPos && slimesRef.current.length < MAX_SLIMES) {
           slimesRef.current.push(createSlime(spawnPos.x, spawnPos.y))
         }
-      } else {
+      } else if (roll < BAT_SPAWN_THRESHOLD) {
         // Spawn bat
         const batX = Math.random() * (grid.width - 2)
         const batY = 10 + Math.random() * 15
         if (batsRef.current.length < MAX_BATS) {
           batsRef.current.push(createBat(batX, batY))
+        }
+      } else {
+        // Spawn spider
+        const spawnPos = findSpawnPosition(grid, 2)
+        if (spawnPos && spidersRef.current.length < MAX_SPIDERS) {
+          spidersRef.current.push(createSpider(spawnPos.x, spawnPos.y))
         }
       }
     }
@@ -482,6 +775,80 @@ export default function Game() {
         PARTICLE_SIZE / 2,
         PARTICLE_SIZE / 2 + wingFlap
       )
+    })
+
+    // Draw spiders with leg animation
+    spidersRef.current.forEach((spider) => {
+      ctx.fillStyle = PARTICLE_COLORS[ParticleType.SPIDER]
+      
+      // Body
+      ctx.fillRect(
+        spider.x * PARTICLE_SIZE,
+        spider.y * PARTICLE_SIZE,
+        spider.width * PARTICLE_SIZE,
+        spider.height * PARTICLE_SIZE
+      )
+      
+      // Animated legs
+      const legWiggle = Math.sin(performance.now() * 0.015) * 2
+      // Left legs
+      ctx.fillRect(
+        (spider.x - 0.3) * PARTICLE_SIZE,
+        (spider.y + 0.3) * PARTICLE_SIZE,
+        PARTICLE_SIZE / 3,
+        PARTICLE_SIZE / 2 + legWiggle
+      )
+      ctx.fillRect(
+        (spider.x - 0.3) * PARTICLE_SIZE,
+        (spider.y + spider.height - 0.8) * PARTICLE_SIZE,
+        PARTICLE_SIZE / 3,
+        PARTICLE_SIZE / 2 - legWiggle
+      )
+      // Right legs
+      ctx.fillRect(
+        (spider.x + spider.width) * PARTICLE_SIZE,
+        (spider.y + 0.3) * PARTICLE_SIZE,
+        PARTICLE_SIZE / 3,
+        PARTICLE_SIZE / 2 - legWiggle
+      )
+      ctx.fillRect(
+        (spider.x + spider.width) * PARTICLE_SIZE,
+        (spider.y + spider.height - 0.8) * PARTICLE_SIZE,
+        PARTICLE_SIZE / 3,
+        PARTICLE_SIZE / 2 + legWiggle
+      )
+    })
+
+    // Draw power-ups with pulse and glow
+    powerUpsRef.current.forEach(powerUp => {
+      const pulseScale = 1 + Math.sin(powerUp.pulse) * 0.3
+      const size = 2 * PARTICLE_SIZE * pulseScale
+      
+      ctx.fillStyle = PARTICLE_COLORS[ParticleType.POWER_UP]
+      ctx.globalAlpha = 0.9 + Math.sin(powerUp.pulse) * 0.1
+      
+      // Draw star shape for power-up
+      const centerX = (powerUp.x + 1) * PARTICLE_SIZE
+      const centerY = (powerUp.y + 1) * PARTICLE_SIZE
+      
+      // Simple diamond/star
+      ctx.beginPath()
+      ctx.moveTo(centerX, centerY - size / 2)
+      ctx.lineTo(centerX + size / 4, centerY)
+      ctx.lineTo(centerX, centerY + size / 2)
+      ctx.lineTo(centerX - size / 4, centerY)
+      ctx.closePath()
+      ctx.fill()
+      
+      // Horizontal cross
+      ctx.fillRect(
+        centerX - size / 2,
+        centerY - size / 8,
+        size,
+        size / 4
+      )
+      
+      ctx.globalAlpha = 1
     })
 
     // Draw health pickups with pulse animation
@@ -566,6 +933,16 @@ export default function Game() {
     })
     ctx.globalAlpha = 1
 
+    // Draw floating text
+    floatingTextRef.current.forEach(t => {
+      ctx.fillStyle = t.color
+      ctx.globalAlpha = Math.min(1, t.life / 30)
+      ctx.font = 'bold 10px monospace'
+      ctx.textAlign = 'center'
+      ctx.fillText(t.text, t.x, t.y)
+    })
+    ctx.globalAlpha = 1
+
     ctx.restore()
   }
 
@@ -582,7 +959,11 @@ export default function Game() {
     setScreenShake({ x: 0, y: 0 })
     setCombo(0)
     setComboTimer(0)
+    setActivePowerUp(null)
+    setPowerUpTimer(0)
+    setEnemiesKilled(0)
     particleEffectsRef.current = []
+    floatingTextRef.current = []
     lastDamageTimeRef.current = 0
     gameTimeRef.current = 0
     lastSpawnTimeRef.current = 0
@@ -610,7 +991,14 @@ export default function Game() {
       batsRef.current.push(createBat(batX, batY))
     }
 
+    spidersRef.current = []
+    const spiderSpawn = findSpawnPosition(grid, 2)
+    if (spiderSpawn) {
+      spidersRef.current.push(createSpider(spiderSpawn.x, spiderSpawn.y))
+    }
+
     healthPickupsRef.current = []
+    powerUpsRef.current = []
     setIsPaused(false)
 
     gridRef.current = grid
@@ -642,9 +1030,29 @@ export default function Game() {
           <span className="text-xs">Score: {score ?? 0}</span>
         </div>
         <div className="text-xs text-muted-foreground mb-1">High: {highScore ?? 0}</div>
+        <div className="text-xs text-muted-foreground mb-1">Kills: {enemiesKilled}</div>
         {combo > 1 && comboTimer > 0 && (
           <div className="text-xs font-bold text-yellow-400 animate-pulse">
             x{combo} COMBO!
+          </div>
+        )}
+        {activePowerUp && powerUpTimer > 0 && (
+          <div className="text-xs font-bold mt-1 pt-1 border-t border-border animate-pulse">
+            {activePowerUp === PowerUpType.SPEED && (
+              <div className="text-blue-400 flex items-center gap-1">
+                <Lightning size={12} weight="fill" /> SPEED {Math.ceil(powerUpTimer)}s
+              </div>
+            )}
+            {activePowerUp === PowerUpType.SHIELD && (
+              <div className="text-purple-400 flex items-center gap-1">
+                <ShieldCheck size={12} weight="fill" /> SHIELD {Math.ceil(powerUpTimer)}s
+              </div>
+            )}
+            {activePowerUp === PowerUpType.DAMAGE && (
+              <div className="text-orange-400 flex items-center gap-1">
+                <Sword size={12} weight="fill" /> POWER {Math.ceil(powerUpTimer)}s
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -685,6 +1093,7 @@ export default function Game() {
           <div className="bg-card border-4 border-border p-8 text-center">
             <h2 className="text-2xl text-destructive mb-4">Game Over</h2>
             <p className="text-card-foreground mb-2">Score: {score ?? 0}</p>
+            <p className="text-muted-foreground mb-2">Enemies Defeated: {enemiesKilled}</p>
             <p className="text-muted-foreground mb-6">High Score: {highScore ?? 0}</p>
             <button
               onClick={resetGame}

@@ -29,6 +29,12 @@ export interface Bat extends Entity {
   isDiving: boolean
 }
 
+export interface Spider extends Entity {
+  climbCooldown: number
+  isClimbing: boolean
+  targetY: number
+}
+
 export function createPlayer(x: number, y: number): Player {
   return {
     x,
@@ -76,6 +82,23 @@ export function createBat(x: number, y: number): Bat {
     hoverSpeed: 0.05,
     diveCooldown: 0,
     isDiving: false,
+  }
+}
+
+export function createSpider(x: number, y: number): Spider {
+  return {
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    width: 2,
+    height: 2,
+    onGround: false,
+    health: 25,
+    maxHealth: 25,
+    climbCooldown: 0,
+    isClimbing: false,
+    targetY: y,
   }
 }
 
@@ -328,5 +351,105 @@ export function checkSwordSlimeCollision(
     swordHitbox.x >= slime.x + slime.width ||
     swordHitbox.y + swordHitbox.height <= slime.y ||
     swordHitbox.y >= slime.y + slime.height
+  )
+}
+
+export function updateSpiderAI(spider: Spider, player: Player, grid: ParticleGrid) {
+  const distToPlayerX = player.x - spider.x
+  const distToPlayerY = player.y - spider.y
+  const MIN_CLIMB_DISTANCE = 2
+  
+  if (spider.climbCooldown > 0) {
+    spider.climbCooldown--
+  }
+
+  // Check if spider is next to a wall
+  const leftWall = checkCollision(spider, grid, -1, 0)
+  const rightWall = checkCollision(spider, grid, 1, 0)
+  
+  // Spider can climb walls
+  if ((leftWall || rightWall) && Math.abs(distToPlayerY) > MIN_CLIMB_DISTANCE) {
+    spider.isClimbing = true
+    spider.vy = distToPlayerY > 0 ? 1 : -1
+    spider.vx = 0
+  } else {
+    spider.isClimbing = false
+    
+    // Ground movement
+    if (spider.onGround && spider.climbCooldown === 0) {
+      if (Math.abs(distToPlayerX) < 35) {
+        // Jump towards player
+        spider.vy = -3.5
+        spider.vx = distToPlayerX > 0 ? 2.5 : -2.5
+        spider.climbCooldown = 50 + Math.floor(Math.random() * 30)
+      }
+    }
+    
+    if (!spider.isClimbing) {
+      applyGravity(spider, 0.5)
+    }
+  }
+
+  // Update position
+  if (spider.isClimbing) {
+    spider.y += spider.vy
+    // Keep on wall
+    if (spider.y < 0) spider.y = 0
+    if (spider.y > grid.height - spider.height) spider.y = grid.height - spider.height
+  } else {
+    // Normal physics
+    const steps = Math.ceil(Math.abs(spider.vy))
+    const stepY = spider.vy / steps
+
+    for (let i = 0; i < steps; i++) {
+      if (checkCollision(spider, grid, 0, stepY)) {
+        if (spider.vy > 0) {
+          spider.onGround = true
+          spider.vy = 0
+        } else {
+          spider.vy = 0
+        }
+        break
+      } else {
+        spider.y += stepY
+        spider.onGround = false
+      }
+    }
+
+    const stepsX = Math.ceil(Math.abs(spider.vx))
+    const stepX = spider.vx > 0 ? 1 : -1
+
+    for (let i = 0; i < stepsX; i++) {
+      if (checkCollision(spider, grid, stepX, 0)) {
+        spider.vx = 0
+        break
+      } else {
+        spider.x += stepX
+      }
+    }
+
+    spider.vx *= 0.9
+    if (Math.abs(spider.vx) < 0.1) spider.vx = 0
+  }
+}
+
+export function checkPlayerSpiderCollision(player: Player, spider: Spider): boolean {
+  return !(
+    player.x + player.width <= spider.x ||
+    player.x >= spider.x + spider.width ||
+    player.y + player.height <= spider.y ||
+    player.y >= spider.y + spider.height
+  )
+}
+
+export function checkSwordSpiderCollision(
+  swordHitbox: { x: number; y: number; width: number; height: number },
+  spider: Spider
+): boolean {
+  return !(
+    swordHitbox.x + swordHitbox.width <= spider.x ||
+    swordHitbox.x >= spider.x + spider.width ||
+    swordHitbox.y + swordHitbox.height <= spider.y ||
+    swordHitbox.y >= spider.y + spider.height
   )
 }
