@@ -63,6 +63,7 @@ export default function Game() {
   const [comboTimer, setComboTimer] = useState(0)
   const [activePowerUp, setActivePowerUp] = useState<PowerUpType | null>(null)
   const [powerUpTimer, setPowerUpTimer] = useState(0)
+  const [enemiesKilled, setEnemiesKilled] = useState(0)
 
   const gridRef = useRef<ParticleGrid | null>(null)
   const playerRef = useRef<Player | null>(null)
@@ -319,6 +320,9 @@ export default function Game() {
             
             slimesRef.current.splice(index, 1)
             
+            // Update kill counter
+            setEnemiesKilled(prev => prev + 1)
+            
             // Update combo
             setCombo(prev => prev + 1)
             setComboTimer(COMBO_DURATION)
@@ -418,6 +422,9 @@ export default function Game() {
             }
             
             batsRef.current.splice(index, 1)
+            
+            // Update kill counter
+            setEnemiesKilled(prev => prev + 1)
             
             // Update combo
             setCombo(prev => prev + 1)
@@ -543,6 +550,9 @@ export default function Game() {
             }
             
             spidersRef.current.splice(index, 1)
+            
+            // Update kill counter
+            setEnemiesKilled(prev => prev + 1)
             
             // Update combo
             setCombo(prev => prev + 1)
@@ -947,6 +957,7 @@ export default function Game() {
     setComboTimer(0)
     setActivePowerUp(null)
     setPowerUpTimer(0)
+    setEnemiesKilled(0)
     particleEffectsRef.current = []
     floatingTextRef.current = []
     lastDamageTimeRef.current = 0
@@ -1015,6 +1026,7 @@ export default function Game() {
           <span className="text-xs">Score: {score ?? 0}</span>
         </div>
         <div className="text-xs text-muted-foreground mb-1">High: {highScore ?? 0}</div>
+        <div className="text-xs text-muted-foreground mb-1">Kills: {enemiesKilled}</div>
         {combo > 1 && comboTimer > 0 && (
           <div className="text-xs font-bold text-yellow-400 animate-pulse">
             x{combo} COMBO!
@@ -1077,6 +1089,7 @@ export default function Game() {
           <div className="bg-card border-4 border-border p-8 text-center">
             <h2 className="text-2xl text-destructive mb-4">Game Over</h2>
             <p className="text-card-foreground mb-2">Score: {score ?? 0}</p>
+            <p className="text-muted-foreground mb-2">Enemies Defeated: {enemiesKilled}</p>
             <p className="text-muted-foreground mb-6">High Score: {highScore ?? 0}</p>
             <button
               onClick={resetGame}
