@@ -22,6 +22,13 @@ export interface Slime extends Entity {
   targetX: number
 }
 
+export interface Bat extends Entity {
+  hoverOffset: number
+  hoverSpeed: number
+  diveCooldown: number
+  isDiving: boolean
+}
+
 export function createPlayer(x: number, y: number): Player {
   return {
     x,
@@ -51,6 +58,24 @@ export function createSlime(x: number, y: number): Slime {
     maxHealth: 30,
     jumpCooldown: 0,
     targetX: x,
+  }
+}
+
+export function createBat(x: number, y: number): Bat {
+  return {
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    width: 2,
+    height: 2,
+    onGround: false,
+    health: 20,
+    maxHealth: 20,
+    hoverOffset: 0,
+    hoverSpeed: 0.05,
+    diveCooldown: 0,
+    isDiving: false,
   }
 }
 
@@ -191,12 +216,82 @@ export function updateSlimeAI(slime: Slime, player: Player, grid: ParticleGrid) 
   if (Math.abs(slime.vx) < 0.1) slime.vx = 0
 }
 
+export function updateBatAI(bat: Bat, player: Player, grid: ParticleGrid) {
+  const distToPlayerX = player.x - bat.x
+  const distToPlayerY = player.y - bat.y
+  const distance = Math.sqrt(distToPlayerX * distToPlayerX + distToPlayerY * distToPlayerY)
+
+  // Hover motion
+  bat.hoverOffset += bat.hoverSpeed
+  
+  if (bat.diveCooldown > 0) {
+    bat.diveCooldown--
+  }
+
+  // Decide whether to dive
+  if (!bat.isDiving && bat.diveCooldown === 0 && distance < 40) {
+    bat.isDiving = true
+    bat.diveCooldown = 120
+  }
+
+  if (bat.isDiving) {
+    // Dive towards player
+    bat.vx = distToPlayerX > 0 ? 3 : -3
+    bat.vy = distToPlayerY > 0 ? 3 : -3
+    
+    // Stop diving if close to ground
+    const below = grid.get(Math.floor(bat.x), Math.floor(bat.y + bat.height + 1))
+    if (below && below.type !== ParticleType.AIR) {
+      bat.isDiving = false
+      bat.vy = -4 // Fly back up
+    }
+  } else {
+    // Hover and follow player horizontally
+    const targetY = 20 + Math.sin(bat.hoverOffset) * 5
+    bat.vy = (targetY - bat.y) * 0.05
+    bat.vx = distToPlayerX > 0 ? 1.5 : -1.5
+  }
+
+  // Update position
+  bat.x += bat.vx
+  bat.y += bat.vy
+
+  // Keep in bounds
+  if (bat.x < 0) bat.x = 0
+  if (bat.x > grid.width - bat.width) bat.x = grid.width - bat.width
+  if (bat.y < 0) bat.y = 0
+
+  bat.vx *= 0.95
+  bat.vy *= 0.95
+}
+
 export function checkPlayerSlimeCollision(player: Player, slime: Slime): boolean {
   return !(
     player.x + player.width <= slime.x ||
     player.x >= slime.x + slime.width ||
     player.y + player.height <= slime.y ||
     player.y >= slime.y + slime.height
+  )
+}
+
+export function checkPlayerBatCollision(player: Player, bat: Bat): boolean {
+  return !(
+    player.x + player.width <= bat.x ||
+    player.x >= bat.x + bat.width ||
+    player.y + player.height <= bat.y ||
+    player.y >= bat.y + bat.height
+  )
+}
+
+export function checkSwordBatCollision(
+  swordHitbox: { x: number; y: number; width: number; height: number },
+  bat: Bat
+): boolean {
+  return !(
+    swordHitbox.x + swordHitbox.width <= bat.x ||
+    swordHitbox.x >= bat.x + bat.width ||
+    swordHitbox.y + swordHitbox.height <= bat.y ||
+    swordHitbox.y >= bat.y + bat.height
   )
 }
 
