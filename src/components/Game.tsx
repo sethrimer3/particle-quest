@@ -44,6 +44,10 @@ const MAX_SPIDERS = 3
 const POWER_UP_DURATION = 8
 const POWER_UP_SPAWN_CHANCE = 0.15
 
+// Enemy spawn probabilities
+const SLIME_SPAWN_THRESHOLD = 0.4
+const BAT_SPAWN_THRESHOLD = 0.7
+
 export enum PowerUpType {
   SPEED = 'speed',
   SHIELD = 'shield',
@@ -675,13 +679,13 @@ export default function Game() {
       
       // Spawn additional enemy
       const roll = Math.random()
-      if (roll < 0.4) {
+      if (roll < SLIME_SPAWN_THRESHOLD) {
         // Spawn slime
         const spawnPos = findSpawnPosition(grid, 2)
         if (spawnPos && slimesRef.current.length < MAX_SLIMES) {
           slimesRef.current.push(createSlime(spawnPos.x, spawnPos.y))
         }
-      } else if (roll < 0.7) {
+      } else if (roll < BAT_SPAWN_THRESHOLD) {
         // Spawn bat
         const batX = Math.random() * (grid.width - 2)
         const batY = 10 + Math.random() * 15

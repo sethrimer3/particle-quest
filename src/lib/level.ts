@@ -1,5 +1,12 @@
 import { ParticleGrid, ParticleType } from './particles'
 
+// Terrain generation constants
+const DEEP_UNDERGROUND_DEPTH = 8
+const MIN_PLATFORMS = 3
+const PLATFORM_COUNT_RANGE = 3
+const MIN_PILLARS = 2
+const PILLAR_COUNT_RANGE = 2
+
 export function generateLevel(grid: ParticleGrid) {
   const groundLevel = Math.floor(grid.height * 0.7)
   
@@ -11,7 +18,7 @@ export function generateLevel(grid: ParticleGrid) {
     for (let y = height; y < grid.height; y++) {
       if (y === height) {
         grid.set(x, y, { type: ParticleType.GRASS, updated: false })
-      } else if (y > height + 8 && Math.random() < 0.3) {
+      } else if (y > height + DEEP_UNDERGROUND_DEPTH && Math.random() < 0.3) {
         // Add stone deep underground
         grid.set(x, y, { type: ParticleType.STONE, updated: false })
       } else {
@@ -31,7 +38,7 @@ export function generateLevel(grid: ParticleGrid) {
   }
   
   // Add floating platforms for variety
-  const platformCount = 3 + Math.floor(Math.random() * 3)
+  const platformCount = MIN_PLATFORMS + Math.floor(Math.random() * PLATFORM_COUNT_RANGE)
   for (let i = 0; i < platformCount; i++) {
     const platformX = 10 + Math.floor(Math.random() * (grid.width - 30))
     const platformY = 20 + Math.floor(Math.random() * 25)
@@ -49,7 +56,7 @@ export function generateLevel(grid: ParticleGrid) {
   }
   
   // Add stone pillars
-  const pillarCount = 2 + Math.floor(Math.random() * 2)
+  const pillarCount = MIN_PILLARS + Math.floor(Math.random() * PILLAR_COUNT_RANGE)
   for (let i = 0; i < pillarCount; i++) {
     const pillarX = 15 + Math.floor(Math.random() * (grid.width - 30))
     const pillarHeight = 8 + Math.floor(Math.random() * 12)

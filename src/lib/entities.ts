@@ -357,6 +357,7 @@ export function checkSwordSlimeCollision(
 export function updateSpiderAI(spider: Spider, player: Player, grid: ParticleGrid) {
   const distToPlayerX = player.x - spider.x
   const distToPlayerY = player.y - spider.y
+  const MIN_CLIMB_DISTANCE = 2
   
   if (spider.climbCooldown > 0) {
     spider.climbCooldown--
@@ -367,7 +368,7 @@ export function updateSpiderAI(spider: Spider, player: Player, grid: ParticleGri
   const rightWall = checkCollision(spider, grid, 1, 0)
   
   // Spider can climb walls
-  if ((leftWall || rightWall) && Math.abs(distToPlayerY) > 2) {
+  if ((leftWall || rightWall) && Math.abs(distToPlayerY) > MIN_CLIMB_DISTANCE) {
     spider.isClimbing = true
     spider.vy = distToPlayerY > 0 ? 1 : -1
     spider.vx = 0
