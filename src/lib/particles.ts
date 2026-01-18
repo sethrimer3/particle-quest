@@ -8,6 +8,9 @@ export enum ParticleType {
   SWORD = 6,
   BAT = 7,
   HEALTH_PICKUP = 8,
+  SPIDER = 9,
+  POWER_UP = 10,
+  STONE = 11,
 }
 
 export interface Particle {
@@ -27,6 +30,9 @@ export const PARTICLE_COLORS: Record<ParticleType, string> = {
   [ParticleType.SWORD]: '#B0B0B0',
   [ParticleType.BAT]: '#8B008B',
   [ParticleType.HEALTH_PICKUP]: '#FF1744',
+  [ParticleType.SPIDER]: '#FF4500',
+  [ParticleType.POWER_UP]: '#FFD700',
+  [ParticleType.STONE]: '#696969',
 }
 
 export const PARTICLE_SIZE = 8
