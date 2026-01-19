@@ -210,6 +210,8 @@ export default function Game() {
       player.vx = -moveSpeed
     } else if (keys.has('d')) {
       player.vx = moveSpeed
+    } else {
+      player.vx = 0
     }
 
     if (keys.has('w') && player.onGround) {
